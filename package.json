@@ -1,0 +1,22 @@
+{
+  "name": "openwhisk-redis-trigger-feed",
+  "version": "1.0.0",
+  "description": "Redis Trigger Feed Event Source for Apache OpenWhisk using the Pluggable Event Provider",
+  "main": "index.js",
+  "keywords": [],
+  "scripts": {
+    "test": "ava test/unit",
+    "test-integration": "ava test/integration"
+  },
+  "author": "James Thomas <james@jamesthom.as>",
+  "license": "Apache-2.0",
+  "repository": "github:jthomas/openwhisk-redis-trigger-feed",
+  "dependencies": {
+    "redis": "^2.8.0"
+  },
+  "devDependencies": {
+    "ava": "^1.4.1",
+    "openwhisk": "^3.19.0",
+    "winston": "^3.2.1"
+  }
+}
