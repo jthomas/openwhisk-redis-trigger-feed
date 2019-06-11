@@ -6,6 +6,7 @@ const RedisTriggerFeed = require('../../index.js')
 const openwhisk = require('openwhisk')
 const fs = require('fs')
 const redis = require('redis')
+const { promisify } = require('util')
 
 const winston = require('winston')
 
@@ -16,7 +17,8 @@ const logger = winston.createLogger({
   level, transports: [ consoleLogger ]
 });
 
-const config = JSON.parse(fs.readFileSync('./test/integration/config.json', 'utf-8'))
+const config_file = process.env.CONFIG_FILE || './test/integration/config.json' 
+const config = JSON.parse(fs.readFileSync(config_file, 'utf-8'))
 
 const topLevelConfig = ['redis', 'openwhisk']
 
@@ -152,6 +154,54 @@ test.serial('publishing redis channel messages with pattern subscription should 
       const activationEvents = await wait_for_activations(config.openwhisk.trigger, now, messages.length)
       t.deepEqual(activationEvents.map(evt => evt.msg).sort(), messages)
       t.deepEqual(activationEvents.map(evt => evt.channel).sort(), channels)
+
+      await feedProvider.remove(trigger)
+
+      client.quit(resolve)
+    } catch (err) {
+      logger.error(err)
+      reject(err)
+    }
+  })
+});
+
+// TODO: Add cache support
+test.serial('publishing redis stream messages should invoke openwhisk triggers', async t => {
+  const triggerManager = {
+    fireTrigger: (id, event) => ow.triggers.invoke({name: id, params: event})
+  }
+
+  const feedProvider = new RedisTriggerFeed(triggerManager, logger)
+
+  const trigger = `/_/${config.openwhisk.trigger}`
+  const details = Object.assign({}, config.redis)
+  delete details.subscribe
+  details.stream = "test-stream"
+
+  logger.info(`adding trigger (${trigger}) to feed provider...`)
+  await feedProvider.add(trigger, details)
+  await timeout(1000)
+
+  return new Promise(async (resolve, reject) => {
+    try {
+      const client = redis.createClient(parse_options(config.redis))
+      const xadd = promisify(client.xadd).bind(client)
+
+      let now = Date.now()
+
+      const NUMBER_OF_MESSAGES = 10
+      const messages = []
+
+      for(let i = 0; i < NUMBER_OF_MESSAGES; i++) {
+        const message = `message-${i}`
+        logger.info(`sending (${message}) to stream (${details.stream})...`)
+        const message_id = await xadd(details.stream, '*', 'message', message)
+        messages.push({ stream: details.stream, message: { message }, message_id })
+        logger.info(`sent (${message}) to stream (${details.stream})`)
+      }
+
+      const activationEvents = await wait_for_activations(config.openwhisk.trigger, now, messages.length)
+      t.deepEqual(activationEvents, messages)
 
       await feedProvider.remove(trigger)
 

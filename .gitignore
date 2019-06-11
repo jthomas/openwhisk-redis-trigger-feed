@@ -3,3 +3,4 @@ node_modules/
 package-lock.json
 
 test/integration/config.json
+test/integration/remote-config.json

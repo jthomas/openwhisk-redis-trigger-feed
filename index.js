@@ -1,6 +1,7 @@
 "use strict"; 
 
 const ChannelListener = require('./lib/channel_listener.js')
+const StreamListener = require('./lib/stream_listener.js')
 const Validate = require('./lib/validate.js')
 const redis = require('redis')
 const { promisify } = require('util')
@@ -36,10 +37,11 @@ module.exports = function (triggerManager, logger) {
       remove(id)
     }
 
-    const { url, subscribe, psubscribe } = details
+    const { url, subscribe, psubscribe, stream } = details
 
-    const channel = subscribe || psubscribe
+    const channel_or_stream = subscribe || psubscribe || stream
     const is_pattern = !!psubscribe
+    const is_stream = !!stream
 
     const client = redis.createClient(parse_options(details))
 
@@ -55,15 +57,18 @@ module.exports = function (triggerManager, logger) {
       return triggerManager.fireTrigger(id, evt)
     }
 
-    const channel_listener = await ChannelListener(client, channel, is_pattern, onmessage, logger, id)
-    logger.info(`redis-trigger-feed`, `channel listener (${channel}) started for trigger: ${id}`)
+    const listener = is_stream ? 
+      await StreamListener(client, channel_or_stream, onmessage, logger, id) :
+      await ChannelListener(client, channel_or_stream, is_pattern, onmessage, logger, id)
 
-    channel_listener.on('error', err => {
+    logger.info(`redis-trigger-feed`, `redis listener (${channel_or_stream}) started for trigger: ${id}`)
+
+    listener.on('error', err => {
       logger.error('redis-trigger-feed', `error processing channel messages for trigger ${id}`, err)
       triggerManager.disableTrigger(id, null, err.message)
     })
 
-    triggers.set(id, channel_listener)
+    triggers.set(id,listener)
   }
   
   const remove = async id => {
@@ -72,9 +77,7 @@ module.exports = function (triggerManager, logger) {
 
     const listener = triggers.get(id)
     listener.stop()
-
-    const quit = promisify(listener.client.quit).bind(listener.client)
-    await quit()
+    listener.client.end(false)
 
     triggers.delete(id)
   }

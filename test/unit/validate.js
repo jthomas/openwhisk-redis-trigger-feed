@@ -10,12 +10,12 @@ test('should return error when missing url parameter', async t => {
   await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: missing url parameter'});
 })
 
-test('should return error when missing subscribe or psubscribe parameter', async t => {
+test('should return error when missing subscribe or psubscribe or stream parameter', async t => {
   const params = {
     url: 'redis://user:pass@host.name:6379'
   }
 
-  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: missing subscribe or psubscribe parameter'});
+  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: missing subscribe, psubscribe or stream parameter'});
 })
 
 test('should return error when both subscribe and psubscribe parameters present', async t => {
@@ -25,7 +25,27 @@ test('should return error when both subscribe and psubscribe parameters present'
     psubscribe: 'some-channel-name'
   }
 
-  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: cannot have both subscribe and psubscribe parameters'});
+  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: cannot have more than one of subscribe, psubscribe and stream parameters'});
+})
+
+test('should return error when both stream and subscribe parameters present', async t => {
+  const params = {
+    url: 'redis://user:pass@host.name:6379',
+    subscribe: 'some-channel-name',
+    stream: 'some-stream-name'
+  }
+
+  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: cannot have more than one of subscribe, psubscribe and stream parameters'});
+})
+
+test('should return error when both stream and psubscribe parameters present', async t => {
+  const params = {
+    url: 'redis://user:pass@host.name:6379',
+    psubscribe: 'some-channel-name',
+    stream: 'some-stream-name'
+  }
+
+  await t.throwsAsync(async () => validate(params), {message: 'redis trigger feed: cannot have more than one of subscribe, psubscribe and stream parameters'});
 })
 
 test('should return error with code or message when accessing redis fails', async t => {
