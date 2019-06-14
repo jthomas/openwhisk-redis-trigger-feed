@@ -24,6 +24,67 @@ test('should make blocking xread call for latest messages', async t => {
   })
 })
 
+test('should use default position in first xread call if cache available but not cached value is', async t => {
+  return new Promise((resolve, reject) => {
+    t.plan(6)
+
+    const stream = 'some-stream-name'
+    const trigger_id = 'some-trigger-id'
+    const client = {
+      xread: async (blocking, delay, streams, id, from) => {
+        t.is(blocking, 'BLOCK')
+        t.is(delay, 0)
+        t.is(streams, 'STREAMS')
+        t.is(id, stream)
+        t.is(from, '$')
+        resolve()
+      },
+      on: () => {}
+    }
+
+    const cache = {
+      get: async (id) => {
+        t.is(id, trigger_id)
+        return null
+      }
+    }
+
+    StreamListener(client, stream, null, logger, trigger_id, cache)
+  })
+})
+
+test('should use cached client position in first xread call if cache returns value', async t => {
+  return new Promise((resolve, reject) => {
+    t.plan(6)
+
+    const stream = 'some-stream-name'
+    const trigger_id = 'some-trigger-id'
+    const client_position = '1518951480106-0'
+    const client = {
+      xread: async (blocking, delay, streams, id, from) => {
+        t.is(blocking, 'BLOCK')
+        t.is(delay, 0)
+        t.is(streams, 'STREAMS')
+        t.is(id, stream)
+        t.is(from, client_position)
+        resolve()
+      },
+      on: () => {}
+    }
+
+    const cache = {
+      get: async (id) => {
+        t.is(id, trigger_id)
+        return client_position
+      }
+    }
+
+    StreamListener(client, stream, null, logger, trigger_id, cache)
+  })
+})
+
+
+
 test('should fire single stream as event', async t => {
   return new Promise((resolve, reject) => {
     t.plan(2)
@@ -50,6 +111,41 @@ test('should fire single stream as event', async t => {
     }
 
     StreamListener(client, stream, onmessage, logger)
+  })
+})
+
+test('should set message id after trigger fired if cache available', async t => {
+  return new Promise((resolve, reject) => {
+    t.plan(2)
+    t.timeout(100)
+
+    const stream = 'some-stream-name'
+    const message_id = '1560181592807-0'
+    const trigger_id = 'some-trigger-id'
+
+    const fields = ['name', 'Sara', 'surname', 'OConnor']
+    const client = {
+      xread: (blocking, delay, streams, id, from, cb) => {
+        setTimeout(() => {
+          cb(null, [
+            [ stream, [[ message_id, fields ]]]
+          ])
+        })
+      }
+    }
+
+    const cache = {
+      get: async () => {},
+      set: async (_trigger_id, _message_id) => {
+        t.is(_trigger_id, trigger_id)
+        t.is(_message_id, message_id)
+        resolve()
+      }
+    }
+
+    const onmessage = async () => {}
+
+    StreamListener(client, stream, onmessage, logger, trigger_id, cache)
   })
 })
 
@@ -274,6 +370,36 @@ test('should cancel stream listening when stop() is called', async t => {
     sl.stop()
     setTimeout(() => {
       t.pass()
+      resolve()
+    }, 100)
+  })
+})
+
+test('should remove cached message id when stop() is called', async t => {
+  return new Promise(async (resolve, reject) => {
+    t.plan(1)
+    t.timeout(200)
+
+    const stream = 'some-stream-name'
+    const trigger_id = 'some-trigger-id'
+
+    const client = {
+      xread: (blocking, delay, streams, id, from, cb) => {
+      }
+    }
+
+    const cache = {
+      get: () => {}, 
+      del: async (_trigger_id) => {
+        t.is(trigger_id, _trigger_id)
+      }
+    }
+
+    const onmessage = async (evt) => {}
+
+    const sl = await StreamListener(client, stream, onmessage, logger, trigger_id, cache)
+    sl.stop()
+    setTimeout(() => {
       resolve()
     }, 100)
   })

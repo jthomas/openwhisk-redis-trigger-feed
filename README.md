@@ -6,16 +6,22 @@ This event provider plugin supports listening to events from Redis' both the [Pu
 
 ## usage
 
-| Entity                                      | Type | Parameters                            |
-| ------------------------------------------- | ---- | ------------------------------------- |
-| `/<PROVIDER_NS>/redis-trigger-feed/changes` | feed | url, queue, format, cert, cert_format |
+| Entity                                      | Type | Parameters                                                   |
+| ------------------------------------------- | ---- | ------------------------------------------------------------ |
+| `/<PROVIDER_NS>/redis-trigger-feed/changes` | feed | url, subscribe, subscribe, stream, format, cert, cert_format |
+
+### mandatory parameters
 
 - `url` is the full Redis connection URL for the database, e.g. `redis(s)://user:pass@host.name.com:port`
   - *mandatory parameter*
-- `subscribe` is the [channel name for subscriptions](https://redis.io/commands/subscribe).
-  - *mandatory parameter (if `psubscribe` is not set)*
-- `psubscribe` is the [channel name pattern for subscriptions](https://redis.io/commands/psubscribe).
-  - *mandatory parameter (if `subscribe` is not set)*
+- `subscribe` is the [channel name for subscriptions](https://redis.io/commands/subscribe) OR
+- `psubscribe` is the [channel name pattern for subscriptions](https://redis.io/commands/psubscribe) OR
+- `stream` is the [channel name pattern for subscriptions](https://redis.io/commands/psubscribe)
+
+The `subscribe`, `psubscribe` and `stream` parameters are mutually exclusive. Only a single channel or stream can be listened to per trigger feed.
+
+### optional parameters
+
 - `cert` is the PEM server certificate string.
 - `cert_format` is the PEM server certificate format
   - valid values: `utf-8` & `base64`.
@@ -57,7 +63,11 @@ wsk trigger get test-redis-trigger
 
 ### running
 
-See the "[Pluggable OpenWhisk Event Provider](https://github.com/apache/incubator-openwhisk-pluggable-provider)" docs on how to run this event provider. The following environment parameters are needed for this feed provider.
+See the "[Pluggable OpenWhisk Event Provider](https://github.com/apache/incubator-openwhisk-pluggable-provider)" docs on how to run this event provider.
+
+If the `REDIS` environment parameter contains a URL connection string for a Redis instance. Messages Ids for the last message processed will be stored in the Redis database using the trigger identifier. This allows the stream listener to handle restarts without losing the client position when [reading stream messages](https://redis.io/topics/streams-intro). 
+
+Pub/Sub channels do not support client positions. Restarts will re-join the channel at the point of re-connection.
 
 ### unit tests
 
@@ -89,3 +99,5 @@ npm test
 ```
 npm run test-integration
 ```
+
+*If the `REDIS` environment variable is set, this will run an addition integration test to validate the cached stream client position feature.*

@@ -3,6 +3,7 @@
 import test from 'ava'
 
 const RedisTriggerFeed = require('../../index.js')
+const RedisCache = require('../../lib/redis_cache.js')
 const openwhisk = require('openwhisk')
 const fs = require('fs')
 const redis = require('redis')
@@ -165,7 +166,6 @@ test.serial('publishing redis channel messages with pattern subscription should 
   })
 });
 
-// TODO: Add cache support
 test.serial('publishing redis stream messages should invoke openwhisk triggers', async t => {
   const triggerManager = {
     fireTrigger: (id, event) => ow.triggers.invoke({name: id, params: event})
@@ -212,3 +212,61 @@ test.serial('publishing redis stream messages should invoke openwhisk triggers',
     }
   })
 });
+
+if (process.env.REDIS) {
+  test.serial('publishing redis stream should cache message ids', async t => {
+    const cache = RedisCache(process.env.REDIS, logger)
+
+    const triggerManager = {
+      fireTrigger: (id, event) => ow.triggers.invoke({name: id, params: event})
+    }
+
+    const client = redis.createClient(parse_options(config.redis))
+    const xadd = promisify(client.xadd).bind(client)
+
+    const details = Object.assign({}, config.redis)
+    delete details.subscribe
+    details.stream = "test-stream"
+
+    let now = Date.now()
+
+    const NUMBER_OF_MESSAGES = 10
+    const messages = []
+
+    for(let i = 0; i < NUMBER_OF_MESSAGES; i++) {
+      const message = `message-${i}`
+      logger.info(`sending (${message}) to stream (${details.stream})...`)
+      const message_id = await xadd(details.stream, '*', 'message', message)
+      messages.push({ stream: details.stream, message: { message }, message_id })
+      logger.info(`sent (${message}) to stream (${details.stream})`)
+    }
+
+    let [ms, idx] = messages[0].message_id.split('-')
+    ms -= 1
+    let client_position = `${ms}-${idx}`
+    const trigger = `/_/${config.openwhisk.trigger}`
+
+    logger.info(`setting client position (${client_position}) for stream (${details.stream})`)
+    await cache.set(trigger, client_position)
+
+    const feedProvider = new RedisTriggerFeed(triggerManager, logger)
+
+
+    logger.info(`adding trigger (${trigger}) to feed provider...`)
+    await feedProvider.add(trigger, details)
+    const activationEvents = await wait_for_activations(config.openwhisk.trigger, now, messages.length)
+
+    t.deepEqual(activationEvents, messages)
+    client_position = await cache.get(trigger)
+    t.is(client_position, messages[messages.length - 1].message_id)
+
+    await feedProvider.remove(trigger)
+
+    client_position = await cache.get(trigger)
+    t.is(client_position, null)
+
+    return new Promise((resolve, reject) => {
+      client.quit(resolve)
+    })
+  });
+}

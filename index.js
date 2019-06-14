@@ -3,6 +3,7 @@
 const ChannelListener = require('./lib/channel_listener.js')
 const StreamListener = require('./lib/stream_listener.js')
 const Validate = require('./lib/validate.js')
+const RedisCache = require('./lib/redis_cache.js')
 const redis = require('redis')
 const { promisify } = require('util')
 
@@ -28,6 +29,7 @@ const parse_options = config => {
 }
 
 module.exports = function (triggerManager, logger) {
+  const stream_cache = process.env.REDIS ? RedisCache(process.env.REDIS, logger) : null
   const triggers = new Map()
 
   const add = async (id, details) => {
@@ -52,13 +54,13 @@ module.exports = function (triggerManager, logger) {
       triggerManager.disableTrigger(id, null, err.message)
     })
 
-    const onmessage = evt => { 
+    const onmessage = async evt => { 
       logger.debug(`redis-trigger-feed`, `firing trigger (${id}) with event:`, evt)
-      return triggerManager.fireTrigger(id, evt)
+      await triggerManager.fireTrigger(id, evt)
     }
 
     const listener = is_stream ? 
-      await StreamListener(client, channel_or_stream, onmessage, logger, id) :
+      await StreamListener(client, channel_or_stream, onmessage, logger, id, stream_cache) :
       await ChannelListener(client, channel_or_stream, is_pattern, onmessage, logger, id)
 
     logger.info(`redis-trigger-feed`, `redis listener (${channel_or_stream}) started for trigger: ${id}`)
